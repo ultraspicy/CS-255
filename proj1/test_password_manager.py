@@ -113,6 +113,21 @@ class TestSecurity:
             assert val not in contents, \
                 "Plaintext password is visible in Keychain dump"
     
+    def test_detects_rollback_attack(self):
+        keychain = Keychain.new(PASSWORD)
+        keychain.set("google.com", "password1")
+        old_contents, old_checksum = keychain.dump()
+        keychain.set("google.com", "password2")
+        new_contents, new_checksum = keychain.dump()
+        
+        assert keychain.get("google.com") == "password2", \
+            "New password should be retrievable"
+        
+        with pytest.raises(ValueError):
+            Keychain.load(PASSWORD, old_contents, new_checksum)
+        with pytest.raises(ValueError):
+            Keychain.load(PASSWORD, new_contents, old_checksum)
+    
 
 class TestAutogradability:
     def test_includes_kvs_object_in_dump(self):

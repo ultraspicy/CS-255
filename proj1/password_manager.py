@@ -14,8 +14,11 @@ PBKDF2_ITERATIONS = 100000
 # we can assume no password is longer than this many characters
 MAX_PASSWORD_LENGTH = 64
 
+
 ########## START CODE HERE ##########
 # Add any extra constants you may need
+# we can assume no password is longer than this many characters
+PADDED_PASSWORD_LENGTH = 128
 ########### END CODE HERE ###########
 
 
@@ -27,6 +30,8 @@ class Keychain:
         salt=None,
         kvs=None,
         password=None,
+        hmac_key = None,
+        encrypt_key = None,
         ########### END CODE HERE ###########
     ):
         """
@@ -52,6 +57,8 @@ class Keychain:
             # Store member variables that you intend to be private here
             # (information that an adversary should NOT see).
             "key": key,
+            "hmac_key": hmac_key,
+            "encrypt_key" : encrypt_key,
             "pw": password,
         }
         # raise NotImplementedError(
@@ -61,7 +68,21 @@ class Keychain:
 
     ########## START CODE HERE ##########
     # Add any helper functions you may want to add here
+    @staticmethod
+    def pad_pw(s :str) -> str:
+        if len(s) >= MAX_PASSWORD_LENGTH: 
+            raise ValueError(f"Input string must be less than {MAX_PASSWORD_LENGTH} characters")    
+        padding_length = PADDED_PASSWORD_LENGTH - len(s) 
+        return s + '1' + '0' * (padding_length - 1)
 
+    @staticmethod
+    def unpad_pw(s :str) -> str:
+        if len(s) != PADDED_PASSWORD_LENGTH:  
+            raise ValueError(f"Input string must be exactly {PADDED_PASSWORD_LENGTH} characters")
+        last_one = s.rstrip('0').rfind('1')
+        if last_one == -1:
+            raise ValueError("Invalid padding format: no '1' found")
+        return s[:last_one]
     ########### END CODE HERE ###########
 
     @staticmethod
@@ -87,19 +108,20 @@ class Keychain:
             hmac_hash_module=SHA256
         )
 
-        # derive hmac_key for encryption
-        # TODO derive different keys from main_key
+        # derive hmac_key and encryption_key 
         hmac_obj = HMAC.new(main_key, digestmod=SHA256)
-        cipher = AES.new(main_key, AES.MODE_EAX)
+        hmac_obj.update(str_to_bytes('HMAC'))
+        hmac_key = hmac_obj.digest()
+        hmac_obj.update(str_to_bytes('AES-GCM'))
+        encrypt_key = hmac_obj.digest()
 
         keychain = Keychain(
+            password = keychain_password,
             key = main_key,
+            hmac_key = hmac_key,
+            encrypt_key = encrypt_key,
             salt = salt,
-
         )  
-
-        # Store salt in public data
-        keychain.data["salt"] = encode_bytes(salt)
 
         return keychain
         ########### END CODE HERE ###########
@@ -130,17 +152,23 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         # deserialzie the str to map, then use checksum to verify the content is authenticated
+        # then verify the password is correct
         # then regenerate the main_key from keychain_password and public data
-
         
-        if trusted_data_check is not None:
-            hash_obj = SHA256.new()
-            hash_obj.update(str_to_bytes(repr))
-            if hash_obj.digest() != trusted_data_check:
-                raise ValueError("Checksum verification failed")
-        
+        # verified that the data has the correct checksum, meaning content is not manipulated
+        hash_obj = SHA256.new()
+        hash_obj.update(str_to_bytes(repr))
+        if hash_obj.digest() != trusted_data_check:
+            raise ValueError("Checksum verification failed")
         data = json_str_to_dict(repr)
         print(f"data = {data}")
+
+        # verify the right password is provided
+        pw_checksum = decode_bytes(data["pw_checksum"])
+        hash_obj = SHA256.new()
+        hash_obj.update(str_to_bytes(keychain_password))
+        if hash_obj.digest() != pw_checksum:
+            raise ValueError("PW Checksum verification failed")
 
         salt = decode_bytes(data["salt"])
         password_bytes = str_to_bytes(keychain_password)
@@ -152,16 +180,17 @@ class Keychain:
             hmac_hash_module=SHA256
         )
 
-        try:
-            hmac_obj = HMAC.new(main_key, digestmod=SHA256)
-            hmac_obj.update(salt)
-            hmac_obj.verify(decode_bytes(data["tag"]))
-        except ValueError:
-            raise ValueError("Password verification failed")
+        hmac_obj = HMAC.new(main_key, digestmod=SHA256)
+        hmac_obj.update(str_to_bytes('HMAC'))
+        hmac_key = hmac_obj.digest()
+        hmac_obj.update(str_to_bytes('AES-GCM'))
+        encrypt_key = hmac_obj.digest()
 
         keychain = Keychain(
             key = main_key,
             salt = salt,
+            hmac_key = hmac_key,
+            encrypt_key = encrypt_key,
             kvs = data["kvs"],
         ) 
         
@@ -184,15 +213,14 @@ class Keychain:
             checksum of the JSON serialization
         """
         ########## START CODE HERE ##########
-        # Create an HMAC of the salt using our key
-        hmac_obj = HMAC.new(self.secrets["key"], digestmod=SHA256)
-        hmac_obj.update(decode_bytes(self.data["salt"]))
-        verification_tag = encode_bytes(hmac_obj.digest())
+        h = SHA256.new()
+        h.update(str_to_bytes(self.secrets["pw"]))
+        pw_checksum = encode_bytes(h.digest())
 
         json = dict_to_json_str({
             "kvs": self.data["kvs"],
-            "salt": self.data["salt"],
-            "tag": verification_tag,
+            "salt": encode_bytes(self.data["salt"]),
+            "pw_checksum": pw_checksum,
         })
 
         h = SHA256.new()
@@ -212,25 +240,25 @@ class Keychain:
             The password for the domain if it exists in the KVS, or None if it does not exist
         """
         ########## START CODE HERE ##########
-        hmac_obj = HMAC.new(self.secrets["key"], digestmod=SHA256)
+        hmac_obj = HMAC.new(self.secrets["hmac_key"], digestmod=SHA256)
         hmac_obj.update(str_to_bytes(domain))
         k = encode_bytes(hmac_obj.digest())
 
-        if k in self.data["kvs"]:
-            
+        if k in self.data["kvs"]:     
             v = self.data["kvs"][k]
             ciphertext = decode_bytes(v['ct'])  
             tag = decode_bytes(v['tag'])
             nonce = decode_bytes(v['nonce'])
 
-            cipher = AES.new(self.secrets["key"], AES.MODE_GCM, nonce=nonce)
+            cipher = AES.new(self.secrets["encrypt_key"], AES.MODE_GCM, nonce=nonce)
             cipher.update(str_to_bytes(domain))
             plaintext = cipher.decrypt_and_verify(ciphertext, tag)
-            return bytes_to_str(plaintext)
+            return Keychain.unpad_pw(bytes_to_str(plaintext))
+        
         return None
         ########### END CODE HERE ###########
 
-    def set(self, domain: str, password: str):
+    def set(self, domain: str, password: str): # O(1)
         """
         Inserts the domain and password into the KVS. If the domain is already
         in the password manager, this will update the password for that domain.
@@ -242,16 +270,24 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         # store the hmac of domain
-        hmac_obj = HMAC.new(self.secrets["key"], digestmod=SHA256)
+        pw_pad = Keychain.pad_pw(password)
+        print(f"Padded length: {len(pw_pad)}")  
+        pw_bytes = str_to_bytes(pw_pad)
+        print(f"Bytes length: {len(pw_bytes)}")
+        
+
+        hmac_obj = HMAC.new(self.secrets["hmac_key"], digestmod=SHA256)
         hmac_obj.update(str_to_bytes(domain))
-        k = encode_bytes(hmac_obj.digest()) # Return the binary (non-printable) MAC tag of the message authenticated so far.
+        k = encode_bytes(hmac_obj.digest()) #  digest() returns the binary (non-printable) MAC tag of the message authenticated so far.
 
         # store the encryption of passward
         # wrong approach: use nonce = domain to bind the crypt(pw) with domain to def swap attack. That will 
         # lead to same domain+password will always encrypt to same ciphertext
-        cipher = AES.new(self.secrets["key"], AES.MODE_GCM)
+        cipher = AES.new(self.secrets["encrypt_key"], AES.MODE_GCM)
         cipher.update(str_to_bytes(domain))
-        ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(password))
+        ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(pw_pad))
+        print(f"ct = {encode_bytes(ciphertext)}")
+        print(f"len(ct) = {len(encode_bytes(ciphertext))}")
         v =  {
             "ct": encode_bytes(ciphertext),
             "tag": encode_bytes(tag),   
@@ -261,7 +297,7 @@ class Keychain:
         self.data["kvs"][k] = v
         ########### END CODE HERE ###########
 
-    def remove(self, domain: str) -> bool:
+    def remove(self, domain: str) -> bool: # O(1)
         """
         Removes the domain-password pair for the provided domain from the password manager.
         If the domain does not exist in the password manager, this method deos nothing.
@@ -272,7 +308,7 @@ class Keychain:
             True if the domain existed in the KVS and was removed, False otherwise
         """
         ########## START CODE HERE ##########
-        hmac_obj = HMAC.new(self.secrets["key"], digestmod=SHA256)
+        hmac_obj = HMAC.new(self.secrets["hmac_key"], digestmod=SHA256)
         hmac_obj.update(str_to_bytes(domain))
         k = encode_bytes(hmac_obj.digest())
 
