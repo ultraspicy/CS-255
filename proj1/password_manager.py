@@ -70,7 +70,7 @@ class Keychain:
     # Add any helper functions you may want to add here
     @staticmethod
     def pad_pw(s :str) -> str:
-        if len(s) >= MAX_PASSWORD_LENGTH: 
+        if len(s) > MAX_PASSWORD_LENGTH: 
             raise ValueError(f"Input string must be less than {MAX_PASSWORD_LENGTH} characters")    
         padding_length = PADDED_PASSWORD_LENGTH - len(s) 
         return s + '1' + '0' * (padding_length - 1)
@@ -192,6 +192,7 @@ class Keychain:
             hmac_key = hmac_key,
             encrypt_key = encrypt_key,
             kvs = data["kvs"],
+            password=keychain_password,
         ) 
         
         return keychain
