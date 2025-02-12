@@ -19,6 +19,9 @@ MAX_PASSWORD_LENGTH = 64
 # Add any extra constants you may need
 # we can assume no password is longer than this many characters
 PADDED_PASSWORD_LENGTH = 128
+
+class TrustedStore:
+    checksum = None
 ########### END CODE HERE ###########
 
 
@@ -26,12 +29,13 @@ class Keychain:
     def __init__(
         self,
         ########## START CODE HERE ##########
-        key=None,
         salt=None,
         kvs=None,
-        password=None,
         hmac_key = None,
         encrypt_key = None,
+        ct_pw = None, 
+        ct_pw_tag = None,
+        ct_pw_nonce=None,
         ########### END CODE HERE ###########
     ):
         """
@@ -52,14 +56,15 @@ class Keychain:
             # You should store the key-value store (KVS) in the "kvs" item in this dictionary.
             "kvs": kvs if kvs is not None else {},
             "salt": salt,
+            "ct_pw": ct_pw,
+            "ct_pw_tag": ct_pw_tag,
+            "ct_pw_nonce": ct_pw_nonce,
         }
         self.secrets = {
             # Store member variables that you intend to be private here
             # (information that an adversary should NOT see).
-            "key": key,
             "hmac_key": hmac_key,
             "encrypt_key" : encrypt_key,
-            "pw": password,
         }
         # raise NotImplementedError(
         #     "Delete this line once you've implemented the Keychain constructor (__init__)"
@@ -114,13 +119,19 @@ class Keychain:
         hmac_key = hmac_obj.digest()
         hmac_obj.update(str_to_bytes('AES-GCM'))
         encrypt_key = hmac_obj.digest()
+        # derive key for decrypt password
+        hmac_obj.update(str_to_bytes('PW'))
+        pw_key = hmac_obj.digest()
+        cipher = AES.new(pw_key, AES.MODE_GCM)
+        ct_pw, ct_pw_tag = cipher.encrypt_and_digest(str_to_bytes(keychain_password))
 
         keychain = Keychain(
-            password = keychain_password,
-            key = main_key,
             hmac_key = hmac_key,
             encrypt_key = encrypt_key,
             salt = salt,
+            ct_pw = ct_pw,
+            ct_pw_tag = ct_pw_tag,
+            ct_pw_nonce=cipher.nonce,
         )  
 
         return keychain
@@ -156,44 +167,47 @@ class Keychain:
         # then regenerate the main_key from keychain_password and public data
         
         # verified that the data has the correct checksum, meaning content is not manipulated
+        if trusted_data_check != TrustedStore.checksum:
+            raise ValueError("Potential rollback attack detected")
+        
         hash_obj = SHA256.new()
         hash_obj.update(str_to_bytes(repr))
         if hash_obj.digest() != trusted_data_check:
             raise ValueError("Checksum verification failed")
         data = json_str_to_dict(repr)
-        print(f"data = {data}")
-
-        # verify the right password is provided
-        pw_checksum = decode_bytes(data["pw_checksum"])
-        hash_obj = SHA256.new()
-        hash_obj.update(str_to_bytes(keychain_password))
-        if hash_obj.digest() != pw_checksum:
-            raise ValueError("PW Checksum verification failed")
+        # print(f"data = {data}")
 
         salt = decode_bytes(data["salt"])
-        password_bytes = str_to_bytes(keychain_password)
         main_key = PBKDF2(
-            password=password_bytes,
+            password=str_to_bytes(keychain_password),
             salt=salt,
             dkLen=32,
             count=PBKDF2_ITERATIONS,
-            hmac_hash_module=SHA256
+            hmac_hash_module=SHA256,
         )
 
         hmac_obj = HMAC.new(main_key, digestmod=SHA256)
+        # derive key for hmac
         hmac_obj.update(str_to_bytes('HMAC'))
         hmac_key = hmac_obj.digest()
+        # derive key for AES-GCM
         hmac_obj.update(str_to_bytes('AES-GCM'))
         encrypt_key = hmac_obj.digest()
+        # derive key for decrypt password and verify if the right password is provided
+        hmac_obj.update(str_to_bytes('PW'))
+        pw_key = hmac_obj.digest()
+        cipher = AES.new(pw_key, AES.MODE_GCM, nonce=decode_bytes(data["ct_pw_nonce"]))
+        cipher.decrypt_and_verify(decode_bytes(data["ct_pw"]), decode_bytes(data["ct_pw_tag"]))
 
         keychain = Keychain(
-            key = main_key,
-            salt = salt,
             hmac_key = hmac_key,
             encrypt_key = encrypt_key,
-            kvs = data["kvs"],
-            password=keychain_password,
-        ) 
+            salt = salt,
+            ct_pw = data["ct_pw"],
+            ct_pw_tag = data["ct_pw_tag"],
+            ct_pw_nonce=data["ct_pw_nonce"],
+            kvs=data["kvs"],
+        )  
         
         return keychain
         ########### END CODE HERE ###########
@@ -214,19 +228,18 @@ class Keychain:
             checksum of the JSON serialization
         """
         ########## START CODE HERE ##########
-        h = SHA256.new()
-        h.update(str_to_bytes(self.secrets["pw"]))
-        pw_checksum = encode_bytes(h.digest())
-
         json = dict_to_json_str({
             "kvs": self.data["kvs"],
             "salt": encode_bytes(self.data["salt"]),
-            "pw_checksum": pw_checksum,
+            "ct_pw": encode_bytes(self.data["ct_pw"]),
+            "ct_pw_tag": encode_bytes(self.data["ct_pw_tag"]),
+            "ct_pw_nonce": encode_bytes(self.data["ct_pw_nonce"]),
         })
 
         h = SHA256.new()
         h.update(str_to_bytes(json))
         checksum = h.digest()
+        TrustedStore.checksum = checksum
         
         return json, checksum
         ########### END CODE HERE ###########
@@ -272,9 +285,9 @@ class Keychain:
         ########## START CODE HERE ##########
         # store the hmac of domain
         pw_pad = Keychain.pad_pw(password)
-        print(f"Padded length: {len(pw_pad)}")  
-        pw_bytes = str_to_bytes(pw_pad)
-        print(f"Bytes length: {len(pw_bytes)}")
+        # print(f"Padded length: {len(pw_pad)}")  
+        # pw_bytes = str_to_bytes(pw_pad)
+        # print(f"Bytes length: {len(pw_bytes)}")
         
 
         hmac_obj = HMAC.new(self.secrets["hmac_key"], digestmod=SHA256)
@@ -287,8 +300,8 @@ class Keychain:
         cipher = AES.new(self.secrets["encrypt_key"], AES.MODE_GCM)
         cipher.update(str_to_bytes(domain))
         ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(pw_pad))
-        print(f"ct = {encode_bytes(ciphertext)}")
-        print(f"len(ct) = {len(encode_bytes(ciphertext))}")
+        # print(f"ct = {encode_bytes(ciphertext)}")
+        # print(f"len(ct) = {len(encode_bytes(ciphertext))}")
         v =  {
             "ct": encode_bytes(ciphertext),
             "tag": encode_bytes(tag),   
