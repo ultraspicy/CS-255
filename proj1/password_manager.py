@@ -19,9 +19,6 @@ MAX_PASSWORD_LENGTH = 64
 # Add any extra constants you may need
 # we can assume no password is longer than this many characters
 PADDED_PASSWORD_LENGTH = 128
-
-class TrustedStore:
-    checksum = None
 ########### END CODE HERE ###########
 
 
@@ -167,13 +164,13 @@ class Keychain:
         # then regenerate the main_key from keychain_password and public data
         
         # verified that the data has the correct checksum, meaning content is not manipulated
-        if trusted_data_check != TrustedStore.checksum:
-            raise ValueError("Potential rollback attack detected")
+        if trusted_data_check is not None:
+            print(f"load repr: {repr}")
+            hash_obj = SHA256.new()
+            hash_obj.update(str_to_bytes(repr))
+            if hash_obj.digest() != trusted_data_check:
+                raise ValueError("Checksum verification failed")
         
-        hash_obj = SHA256.new()
-        hash_obj.update(str_to_bytes(repr))
-        if hash_obj.digest() != trusted_data_check:
-            raise ValueError("Checksum verification failed")
         data = json_str_to_dict(repr)
         # print(f"data = {data}")
 
@@ -203,9 +200,9 @@ class Keychain:
             hmac_key = hmac_key,
             encrypt_key = encrypt_key,
             salt = salt,
-            ct_pw = data["ct_pw"],
-            ct_pw_tag = data["ct_pw_tag"],
-            ct_pw_nonce=data["ct_pw_nonce"],
+            ct_pw = decode_bytes(data["ct_pw"]),
+            ct_pw_tag = decode_bytes(data["ct_pw_tag"]),
+            ct_pw_nonce= decode_bytes(data["ct_pw_nonce"]),
             kvs=data["kvs"],
         )  
         
@@ -239,7 +236,6 @@ class Keychain:
         h = SHA256.new()
         h.update(str_to_bytes(json))
         checksum = h.digest()
-        TrustedStore.checksum = checksum
         
         return json, checksum
         ########### END CODE HERE ###########
