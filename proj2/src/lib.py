@@ -128,6 +128,9 @@ def decrypt_with_gcm(key: bytes, ciphertext: bytes, iv: bytes, authenticated_dat
         return plaintext.decode("utf-8")
     return plaintext
 
+# DH(dh_pair, dh_pub): Returns the output from the Diffie-Hellman calculation between the private 
+# key from the DH key pair dh_pair and the DH public key dh_pub. 
+# If the DH function rejects invalid public keys, then this function may raise an exception which terminates processing.
 def compute_dh(my_private_key: bytes, their_public_key: bytes) -> bytes:
     """
     Computes Diffie-Hellman key exchange for an EG private key and EG public key
@@ -271,3 +274,4 @@ def str_to_bytes(s: str) -> bytes:
         byte string
     """
     return s.encode("utf-8")
+
