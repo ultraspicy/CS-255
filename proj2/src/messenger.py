@@ -91,11 +91,11 @@ class MessengerClient:
         if other_username not in self.conns:
             self.conns[other_username] = {}
         shared_secret = compute_dh(self.ElGamel_key["private"], certificate["pk"])
+        # the secret is also used as the root_key at the very beginning
         self.conns[other_username]["root_key"] = shared_secret
         
-        # TODO using random salt
-        salt1 = b'\x02' * 16
-        salt2 = b'\x03' * 16
+        salt1 = b'\x11' * 16
+        salt2 = b'\xFF' * 16
         root_key1, chain_key1 = hkdf(shared_secret, salt1, "chain_key_1")
         root_key2, chain_key2 = hkdf(root_key1, salt2, "chain_key_2")
 
@@ -167,34 +167,34 @@ class MessengerClient:
             raise Exception(f"Cannot receive message from {name}: No connection established")
         
         header, ciphertext = message
-        received_pk = header["pk"]
+        received_pk = header["pk"]    
+
         if header["pk"] != self.certs[name]["pk"]:
-            print("=============head changed! new receiving chain!===============")
+            print("============= head changed! new receiving chain! ===============\n")
+            # another ratchet step, update self ElGamel key pair and update the secret
             self.certs[name]["pk"] = header["pk"]
+            self.ElGamel_key = generate_eg()
+            self.certificate["pk"] = self.ElGamel_key["public"]
             shared_secret = compute_dh(self.ElGamel_key["private"], header["pk"])
-            new_root_key, receiving_chain_key = hkdf(self.conns[name]["root_key"], gen_random_salt(), "key_update")
-            # Update the keys for this connection
-            self.conns[name]["root_key"] = new_root_key
-            self.conns[name]["receiving_chain_key"] = receiving_chain_key
+            self.conns[name]["root_key"] = shared_secret
+        
+            salt1 = b'\x11' * 16
+            salt2 = b'\xFF' * 16
+            root_key1, chain_key1 = hkdf(shared_secret, salt1, "chain_key_1")
+            root_key2, chain_key2 = hkdf(root_key1, salt2, "chain_key_2")
+
+            my_username = self.certificate["username"]
+            if my_username < name:
+                self.conns[name]["receiving_chain_key"] = chain_key1
+                self.conns[name]["sending_chain_key"] = chain_key2
+            else: 
+                self.conns[name]["receiving_chain_key"] = chain_key2
+                self.conns[name]["sending_chain_key"] = chain_key1
         
         receiving_chain_key = self.conns[name]["receiving_chain_key"]
         message_key = hmac_to_hmac_key(receiving_chain_key, 'constant1')
         new_receiving_chain_key = hmac_to_hmac_key(receiving_chain_key, 'constant2')
         self.conns[name]["receiving_chain_key"] = new_receiving_chain_key
-
         plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"], str(header))
+
         return plaintext
-
-
-'''
-. If you have not previously communicated, setup the session by generating the necessary
-double ratchet keys according to the Signal spec
-
-should we assume?
-
-
-On every send, increment the sending chain
-(and the root chain if necessary, according to the Signal spec).
-
-test doesn't change public key at all
-'''
