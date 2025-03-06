@@ -20,7 +20,6 @@ from lib import (
     decrypt_with_gcm,
     gov_encryption_data_str
 )
-import base64
 
 class MessengerClient:
     def __init__(self, cert_authority_public_key: bytes, gov_public_key: bytes):
@@ -36,7 +35,7 @@ class MessengerClient:
         self.conns = {}  # data for each active connection
         self.certs = {}  # certificates of other users
 
-        # init Double Ratchet
+        # init ElGamel key pair
         self.ElGamel_key = generate_eg()
         
 
@@ -55,7 +54,7 @@ class MessengerClient:
         2. Public keys are are placed into a certificate 
         // instead of being issued certificates from CA, we just generate our own certificates
         """
-        # raise NotImplementedError("not implemented!")
+        # generate a cert for self
 
         certificate = {
             "username": username,
@@ -80,19 +79,21 @@ class MessengerClient:
         
         // set up shared secret 
         """
+        # verify the cert is valid
         if not verify_with_ecdsa(self.ca_public_key, str(certificate), signature):
             raise ValueError("Tampering detected!")
         
         my_username = self.certificate["username"]
         other_username = certificate["username"]
         self.certs[other_username] = certificate
+
         # Initialize connection for this user if not exists
         if other_username not in self.conns:
             self.conns[other_username] = {}
-
         shared_secret = compute_dh(self.ElGamel_key["private"], certificate["pk"])
         self.conns[other_username]["root_key"] = shared_secret
         
+        # TODO using random salt
         salt1 = b'\x02' * 16
         salt2 = b'\x03' * 16
         root_key1, chain_key1 = hkdf(shared_secret, salt1, "chain_key_1")
@@ -104,15 +105,6 @@ class MessengerClient:
         else: 
             self.conns[other_username]["receiving_chain_key"] = chain_key2
             self.conns[other_username]["sending_chain_key"] = chain_key1
-
-        
-        self.conns[other_username]["root_key"] = shared_secret
-        receiving_chain_key = self.conns[other_username]["receiving_chain_key"] 
-        sending_chain_key = self.conns[other_username]["sending_chain_key"]
-
-        print(f"{my_username}:{other_username} shared_secret with in bytes {encode_bytes(shared_secret)}, with len {len(shared_secret)}")
-        print(f"{my_username}:{other_username} receiving_chain_key in bytes {encode_bytes(receiving_chain_key)}, with len {len(receiving_chain_key)}")
-        print(f"{my_username}:{other_username} sending_chain_key in bytes {encode_bytes(sending_chain_key)}, with len {len(sending_chain_key)}")
 
     def send_message(self, name: str, plaintext: str) -> tuple[dict, str]:
         """
@@ -128,25 +120,20 @@ class MessengerClient:
       
         if name not in self.conns:
             raise Exception(f"Cannot send message to {name}: No connection established")
-        
     
         if self.conns[name]["sending_chain_key"] is None:
             raise Exception(f"No sending chain established for {name}")
         
         sending_chain_key = self.conns[name]["sending_chain_key"]
-        # TODO
-        message_key, new_sending_chain_key = hkdf(sending_chain_key, b'\x01', "chain_to_message_key") # is fixed nonce ok? what is the input of KDF, context?
+        message_key = hmac_to_hmac_key(sending_chain_key, 'constant1')
+        new_sending_chain_key = hmac_to_hmac_key(sending_chain_key, 'constant2')
         self.conns[name]["sending_chain_key"] = new_sending_chain_key
-        # encrypt_with_gcm(key: bytes, plaintext: str, iv: bytes, authenticated_data: str = "") -> bytes:
-        iv = gen_random_salt()[:12]
-        ciphertext = encrypt_with_gcm(message_key, plaintext, iv, name)
 
-        # Generate IV for message encryption
+        iv = gen_random_salt()[:12]
         gov_iv = gen_random_salt()[:12]
         v_gov = self.ElGamel_key["public"]
         gov_key = compute_dh(self.ElGamel_key["private"], self.gov_public_key) # shared secret with the gov
         gov_key = hmac_to_aes_key(gov_key, gov_encryption_data_str)
-
         c_gov = encrypt_with_gcm(gov_key, message_key, gov_iv, "") # encrypt sending_chain_key use gov_iv
 
         header = {
@@ -156,8 +143,10 @@ class MessengerClient:
             "v_gov": v_gov,      
             "c_gov": c_gov,       
             "iv_gov": gov_iv,  
-            "receiver_iv": iv,   
+            "receiver_iv": iv,  
         }
+
+        ciphertext = encrypt_with_gcm(message_key, plaintext, iv, str(header))
         return header, ciphertext
 
 
@@ -189,19 +178,12 @@ class MessengerClient:
             self.conns[name]["receiving_chain_key"] = receiving_chain_key
         
         receiving_chain_key = self.conns[name]["receiving_chain_key"]
-        message_key, new_receiving_chain_key = hkdf(receiving_chain_key, b'\x01', "chain_to_message_key") # is fixed nonce ok? what is the input of KDF, context?
+        message_key = hmac_to_hmac_key(receiving_chain_key, 'constant1')
+        new_receiving_chain_key = hmac_to_hmac_key(receiving_chain_key, 'constant2')
         self.conns[name]["receiving_chain_key"] = new_receiving_chain_key
 
-
-        plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"], name)
+        plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"], str(header))
         return plaintext
-
-
-def encode_bytes(b: bytes) -> str:
-    return base64.b64encode(b).decode('utf-8')
-
-def decode_bytes(hex_str: str) -> bytes:
-    return base64.b64decode(hex_str)
 
 
 '''

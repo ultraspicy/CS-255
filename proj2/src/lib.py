@@ -78,7 +78,7 @@ def verify_with_ecdsa(public_key: bytes, message: str, signature: bytes) -> bool
     except ValueError:
         return False
     
-def encrypt_with_gcm(key: bytes, plaintext: str, iv: bytes, authenticated_data: str = "") -> bytes:
+def encrypt_with_gcm(key: bytes, plaintext: str, iv: bytes, authenticated_data: str = "") -> tuple[bytes, bytes]:
     """
     Encrypts using AES-GCM
 
@@ -89,7 +89,7 @@ def encrypt_with_gcm(key: bytes, plaintext: str, iv: bytes, authenticated_data: 
         authenticated_data (optional string): string
 
     Returns:
-        ciphertext: bytes
+        ciphertext_info: tuple of [ciphertext, tag]
     """
     # Create cipher from key and iv
     cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
@@ -99,16 +99,16 @@ def encrypt_with_gcm(key: bytes, plaintext: str, iv: bytes, authenticated_data: 
     if type(plaintext) == str:
         plaintext = str_to_bytes(plaintext)
     # Encrypt plaintext
-    ciphertext = cipher.encrypt(plaintext)
-    return ciphertext
+    ciphertext_info = cipher.encrypt_and_digest(plaintext)
+    return ciphertext_info
 
-def decrypt_with_gcm(key: bytes, ciphertext: bytes, iv: bytes, authenticated_data: str = "", decode_bytes: bool = True) -> str:
+def decrypt_with_gcm(key: bytes, ciphertext_info: tuple[bytes, bytes], iv: bytes, authenticated_data: str = "", decode_bytes: bool = True) -> str:
     """
     Decrypts using AES-GCM
 
     Inputs:
         key: bytes
-        ciphertext: bytes
+        ciphertext_info: tuple of [ciphertext, tag] (the output from encrypt_with_gcm())
         iv (used to encrypt): bytes
         authenticated_data (optional string): string
         decode_bytes (This is for test_messenger, you should NOT need to set this to False.
@@ -122,15 +122,12 @@ def decrypt_with_gcm(key: bytes, ciphertext: bytes, iv: bytes, authenticated_dat
     # Convert authenticated_data to bytes
     cipher.update(str_to_bytes(authenticated_data))
     # Decrypt ciphertext
-    plaintext = cipher.decrypt(ciphertext)
+    plaintext = cipher.decrypt_and_verify(*ciphertext_info)
     # Convert bytes to string
     if decode_bytes:
         return plaintext.decode("utf-8")
     return plaintext
 
-# DH(dh_pair, dh_pub): Returns the output from the Diffie-Hellman calculation between the private 
-# key from the DH key pair dh_pair and the DH public key dh_pub. 
-# If the DH function rejects invalid public keys, then this function may raise an exception which terminates processing.
 def compute_dh(my_private_key: bytes, their_public_key: bytes) -> bytes:
     """
     Computes Diffie-Hellman key exchange for an EG private key and EG public key
@@ -274,4 +271,3 @@ def str_to_bytes(s: str) -> bytes:
         byte string
     """
     return s.encode("utf-8")
-

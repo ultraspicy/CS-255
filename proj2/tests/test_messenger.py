@@ -51,28 +51,28 @@ class TestFramework(unittest.TestCase):
         self.bob_cert = self.bob.generate_certificate("bob")
 
     @timeout_decorator.timeout(5)
-    def test_import_certificate(self):  
+    def test_01_import_certificate(self):  
         """
         Test: Alice successfully received Bob's certificate
         """
         bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
         self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
         self.assertTrue(True)
-        print("\nTest passed: Alice successfully received Bob's certificate.")
+        print("\n1) Test passed: Alice successfully received Bob's certificate.")
 
     @timeout_decorator.timeout(5)
-    def test_gen_encrypted_message(self):
+    def test_02_gen_encrypted_message(self):
         """
         Test: Alice successfully sent a message
         """     
-        bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert)) #sign_with_ecdsa(private_key: bytes, message: str) -> bytes
+        bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
         self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
         self.alice.send_message("bob", "Hello, Bob")
         self.assertTrue(True)
-        print("\nTest passed: Alice successfully sent a message.")
+        print("\n2) Test passed: Alice successfully sent a message.")
 
     @timeout_decorator.timeout(5)
-    def test_receive_encrypted_message(self):
+    def test_03_receive_encrypted_message(self):
         """
         Test: Bob successfully decrypted message
         """
@@ -80,17 +80,16 @@ class TestFramework(unittest.TestCase):
         bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
         self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
         self.bob.receive_certificate(self.alice_cert, alice_cert_signature)
-
         message = "Hello, Bob"
         ciphertext = self.alice.send_message("bob", message)
         plaintext = self.bob.receive_message("alice", ciphertext)
         self.assertEqual(plaintext, message)
-        print("\nTest passed: Bob successfully decrypted message.")
+        print("\n3) Test passed: Bob successfully decrypted message.")
 
     @timeout_decorator.timeout(5)
-    def test_conversation(self):
+    def test_04_conversation(self):
         """
-        Test: Alice and Bob can have a conversations
+        Test: Alice and Bob can have a conversation
         """
         alice_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
         bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
@@ -111,10 +110,10 @@ class TestFramework(unittest.TestCase):
         ciphertext_from_bob_2 = self.bob.send_message("alice", message_from_bob_2)
         plaintext_from_bob_2 = self.alice.receive_message("bob", ciphertext_from_bob_2)
         self.assertEqual(plaintext_from_bob_2, message_from_bob_2)
-        print("\nTest passed: Alice and Bob can have a conversation.")
+        print("\n4) Test passed: Alice and Bob can have a conversation.")
 
     @timeout_decorator.timeout(5)
-    def test_government_can_decrypt(self):
+    def test_05_government_can_decrypt(self):
         """
         Test: Government can decrypt message from Alice to Bob
         """
@@ -126,10 +125,10 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.alice.send_message("bob", message)
         decrypted_message = gov_decrypt(self.gov_key_pair["private"], ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Government can decrypt message from Alice to Bob.")
+        print("\n5) Test passed: Government can decrypt message from Alice to Bob.")
 
-    # @timeout_decorator.timeout(5)
-    def test_invalid_certificates_are_rejected(self):
+    @timeout_decorator.timeout(5)
+    def test_06_invalid_certificates_are_rejected(self):
         """
         Test: Invalid certificates are rejected
         """
@@ -139,10 +138,10 @@ class TestFramework(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             self.alice.receive_certificate(self.bob_cert, invalid_signature)
         self.assertEqual(str(context.exception), "Tampering detected!")
-        print("\nTest passed: Invalid certificates are rejected.")
+        print("\n6) Test passed: Invalid certificates are rejected.")
 
     @timeout_decorator.timeout(5)
-    def test_message_replay_attack_detected(self):
+    def test_07_message_replay_attack_detected(self):
         """
         Test: Message replay attacks are detected
         """
@@ -155,10 +154,10 @@ class TestFramework(unittest.TestCase):
         plaintext = self.bob.receive_message("alice", ciphertext)
         with self.assertRaises(Exception):
             self.bob.receive_message("alice", ciphertext)
-        print("\nTest passed: Message replay attacks are detected.")
+        print("\n7) Test passed: Message replay attacks are detected.")
 
     @timeout_decorator.timeout(5) 
-    def test_alice_reject_messages_not_intended_recipient(self):
+    def test_08_alice_reject_messages_not_intended_recipient(self):
         """
         Test: Alice rejects messages where she is not the intended recipient
         """
@@ -172,12 +171,12 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.bob.send_message("claire", message)
         with self.assertRaises(Exception):
             self.alice.receive_message("claire", ciphertext)
-        print("\nTest passed: Alice rejects messages where she is not the intended recipient.")
+        print("\n8) Test passed: Alice rejects messages where she is not the intended recipient.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_send_bob_stream_messages_with_no_response(self):
+    def test_09_alice_send_bob_stream_messages_with_no_response(self):
         """
-        Test: Alice can send bob several messages with no response
+        Test: Alice can send Bob several messages with no response
         """
         alice_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
         bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
@@ -199,12 +198,12 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.alice.send_message("bob", message)
         decrypted_message = self.bob.receive_message("alice", ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can send bob several messages with no response.")
+        print("\n9) Test passed: Alice can send Bob several messages with no response.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_send_bob_stream_messages_with_infrequent_response(self):
+    def test_10_alice_send_bob_stream_messages_with_infrequent_response(self):
         """
-        Test: Alice can send bob several messages with infrequent response
+        Test: Alice can send Bob several messages with infrequent response
         """
         alice_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
         bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
@@ -220,10 +219,10 @@ class TestFramework(unittest.TestCase):
             ciphertext = self.bob.send_message("alice", message) 
             decrypted_message = self.alice.receive_message("bob", ciphertext)
             self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can send bob several messages with infrequent response.")
+        print("\n10) Test passed: Alice can send Bob several messages with infrequent response.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_receive_multiple_certificates(self):
+    def test_11_alice_receive_multiple_certificates(self):
         """
         Test: Alice can receive several certificates
         """
@@ -233,10 +232,10 @@ class TestFramework(unittest.TestCase):
         claire_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(claire_cert))
         self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
         self.alice.receive_certificate(claire_cert, claire_cert_signature)
-        print("\nTest passed: Alice can receive several certificates.")
+        print("\n11) Test passed: Alice can receive several certificates.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_send_messages_multiple_parties(self):
+    def test_12_alice_send_messages_multiple_parties(self):
         """
         Test: Alice can send messages to several people
         """
@@ -256,10 +255,10 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.alice.send_message("claire", message)
         decrypted_message = self.claire.receive_message("alice", ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can send messages to several people.")
+        print("\n12) Test passed: Alice can send messages to several people.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_receive_messages_multiple_parties(self):
+    def test_13_alice_receive_messages_multiple_parties(self):
         """
         Test: Alice can receive messages from several people
         """
@@ -279,10 +278,10 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.claire.send_message("alice", message)
         decrypted_message = self.alice.receive_message("claire", ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can receive messages from several people.")
+        print("\n13) Test passed: Alice can receive messages from several people.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_initiate_convo_as_first_sender_another_as_first_receiver(self):
+    def test_14_alice_initiate_convo_as_first_sender_another_as_first_receiver(self):
         """
         Test: Alice can start a convo and can receive a convo
         """
@@ -302,10 +301,10 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.claire.send_message("alice", message)
         decrypted_message = self.alice.receive_message("claire", ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can start a convo and can receive a convo.")
+        print("\n14) Test passed: Alice can start a convo and can receive a convo.")
 
     @timeout_decorator.timeout(5)
-    def test_alice_can_have_multiple_simultaneous_convos(self):
+    def test_15_alice_can_have_multiple_simultaneous_convos(self):
         """
         Test: Alice can have several simultaneous conversations
         """
@@ -357,10 +356,10 @@ class TestFramework(unittest.TestCase):
         ciphertext = self.dave.send_message("alice", message)
         decrypted_message = self.alice.receive_message("dave", ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Alice can have several simultaneous conversations.")
+        print("\n15) Test passed: Alice can have several simultaneous conversations.")
 
     @timeout_decorator.timeout(5)
-    def test_gov_can_decrypt_simultaneous_convos(self):
+    def test_16_gov_can_decrypt_simultaneous_convos(self):
         """
         Test: Government can decrypt several simultaneous conversations
         """
@@ -407,62 +406,67 @@ class TestFramework(unittest.TestCase):
         self.alice.receive_message("dave", ciphertext)
         decrypted_message = gov_decrypt(self.gov_key_pair["private"], ciphertext)
         self.assertEqual(decrypted_message, message)
-        print("\nTest passed: Government can decrypt several simultaneous conversations.")
+        print("\n16) Test passed: Government can decrypt several simultaneous conversations.")
 
-    # @timeout_decorator.timeout(5)
-    # def test_handles_shuffled_messages_in_single_stream(self):
-    #     """
-    #     Test: Bob can handle shuffled messages
-    #     """
-    #     alice_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
-    #     bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
-    #     self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
-    #     self.bob.receive_certificate(self.alice_cert, alice_cert_signature)
-    #     message1 = "message 1"
-    #     ciphertext1 = self.alice.send_message("bob", message1)
-    #     message2 = "message 2"
-    #     ciphertext2 = self.alice.send_message("bob", message2)
-    #     message3 = "message 3"
-    #     ciphertext3 = self.alice.send_message("bob", message3)
-    #     result1 = self.bob.receive_message("alice", ciphertext1)
-    #     self.assertEqual(message1, result1)
-    #     result2 = self.bob.receive_message("alice", ciphertext2)
-    #     self.assertEqual(message2, result2)
-    #     result3 = self.bob.receive_message("alice", ciphertext3)
-    #     self.assertEqual(message3, result3)
-    #     print("\nTest passed: Bob can handle shuffled messages.")
+    @timeout_decorator.timeout(5)
+    def test_17_handles_shuffled_messages_in_single_stream(self):
+        """
+        EXTRA CREDIT
 
-    # @timeout_decorator.timeout(5)
-    # def test_handles_where_shuffling_occurs_around_DH_ratchet_steps(self):
-    #     """
-    #     Test: Handles messages where shuffling occurs around DH ratchet steps
-    #     """
-    #     alice_cert_signature =  sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
-    #     bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
-    #     self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
-    #     self.bob.receive_certificate(self.alice_cert, alice_cert_signature)
-    #     message1 = "message 1"
-    #     ciphertext1 = self.alice.send_message("bob", message1)
-    #     message2 = "message 2"
-    #     ciphertext2 = self.alice.send_message("bob", message2)
-    #     result1 = self.bob.receive_message("alice", ciphertext1)
-    #     self.assertEqual(message1, result1)
-    #     message = "DH ratchet"
-    #     ciphertext = self.bob.send_message("alice", message)
-    #     result = self.alice.receive_message("bob", ciphertext)
-    #     self.assertEqual(message, result)
-    #     message3 = "message 3"
-    #     ciphertext3 = self.alice.send_message("bob", message3)
-    #     result2 = self.bob.receive_message("alice", ciphertext2)
-    #     self.assertEqual(message2, result2)
-    #     result3 = self.bob.receive_message("alice", ciphertext3)
-    #     self.assertEqual(message3, result3)
-    #     print("\nTest passed: Handles messages where shuffling occurs around DH ratchet steps.")
+        Test: Bob can handle shuffled messages
+        """
+        alice_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
+        bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
+        self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
+        self.bob.receive_certificate(self.alice_cert, alice_cert_signature)
+        message1 = "message 1"
+        ciphertext1 = self.alice.send_message("bob", message1)
+        message2 = "message 2"
+        ciphertext2 = self.alice.send_message("bob", message2)
+        message3 = "message 3"
+        ciphertext3 = self.alice.send_message("bob", message3)
+        result1 = self.bob.receive_message("alice", ciphertext1)
+        self.assertEqual(message1, result1)
+        result2 = self.bob.receive_message("alice", ciphertext2)
+        self.assertEqual(message2, result2)
+        result3 = self.bob.receive_message("alice", ciphertext3)
+        self.assertEqual(message3, result3)
+        print("\n----------------------------------------------------------------------")
+        print("\n17) EXTRA CREDIT -- Test passed: Bob can handle shuffled messages.")
+
+    @timeout_decorator.timeout(5)
+    def test_18_handles_where_shuffling_occurs_around_DH_ratchet_steps(self):
+        """
+        EXTRA CREDIT
+
+        Test: Handles messages where shuffling occurs around DH ratchet steps
+        """
+        alice_cert_signature =  sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.alice_cert))
+        bob_cert_signature = sign_with_ecdsa(self.ca_key_pair["private"], stringify_cert(self.bob_cert))
+        self.alice.receive_certificate(self.bob_cert, bob_cert_signature)
+        self.bob.receive_certificate(self.alice_cert, alice_cert_signature)
+        message1 = "message 1"
+        ciphertext1 = self.alice.send_message("bob", message1)
+        message2 = "message 2"
+        ciphertext2 = self.alice.send_message("bob", message2)
+        result1 = self.bob.receive_message("alice", ciphertext1)
+        self.assertEqual(message1, result1)
+        message = "DH ratchet"
+        ciphertext = self.bob.send_message("alice", message)
+        result = self.alice.receive_message("bob", ciphertext)
+        self.assertEqual(message, result)
+        message3 = "message 3"
+        ciphertext3 = self.alice.send_message("bob", message3)
+        result2 = self.bob.receive_message("alice", ciphertext2)
+        self.assertEqual(message2, result2)
+        result3 = self.bob.receive_message("alice", ciphertext3)
+        self.assertEqual(message3, result3)
+        print("\n18) EXTRA CREDIT -- Test passed: Handles messages where shuffling occurs around DH ratchet steps.")
 
 
 if __name__ == "__main__":
     try:
-        result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(TestFramework))
+        result = unittest.TextTestRunner(verbosity=0).run(unittest.defaultTestLoader.loadTestsFromTestCase(TestFramework))
         if result.wasSuccessful():
             print("\nAll tests passed successfully!")
         else:
